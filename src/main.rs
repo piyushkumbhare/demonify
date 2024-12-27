@@ -9,6 +9,7 @@ use clap::{arg, command, ArgGroup, Parser};
 #[command(about)]
 #[clap(group(
     ArgGroup::new("action")
+        .required(true)
         .args(&["add", "remove", "list", "kill", "spawn"])
 ))]
 struct Args {

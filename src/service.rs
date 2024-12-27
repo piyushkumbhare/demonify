@@ -51,23 +51,15 @@ pub fn add_service(args: &Args, map: &mut HashMap<String, String>) {
     let name = args.name.clone().unwrap();
     if map.contains_key(&name) {
         println!(
-                    "An existing entry for the service name {} was detected. It's current command is {}.",
-                    &name,
-                    map.get(&name).unwrap()
-                );
+            "An existing entry for the service name {} was detected. It's current command is {}.",
+            &name,
+            map.get(&name).unwrap()
+        );
         println!("To update the value, use --remove {} first.", &name.bold());
+    } else if check_service_active(&name) {
+        println!("There is already an existing process with the name {}.\nTo avoid conflicts, please choose a different name.", &name.bold());
+        exit(1);
     } else {
-        let bash_command = format!("ps -eo args | awk '{{ print $1 }}' | grep -q ^{}$", &name.bold());
-        match Command::new("bash").arg("-c").arg(bash_command).status() {
-            Ok(c) => {
-                if c.success() {
-                    println!("There is already an existing process with the name {}.\nTo avoid conflicts, please choose a different name.", &name.bold());
-                    exit(1);
-                }
-            }
-            Err(_) => {}
-        };
-
         map.insert(name.clone(), args.command.clone().unwrap());
         println!("Service entry {} successfully added.", &name.bold());
     }
@@ -86,9 +78,14 @@ pub fn remove_service(args: &Args, map: &mut HashMap<String, String>) {
     }
 }
 
+/// Attempts to spawn the service with name `args.name`.
 #[inline]
 pub fn spawn_service(args: &Args, map: &mut HashMap<String, String>) {
     let name = args.name.clone().unwrap();
+    if check_service_active(&name) {
+        println!("Service {} is already active.", &name.bold());
+        exit(1);
+    }
     let bash_command = format!(
         "exec -a {} {} &>> {}.log &",
         &name,
@@ -108,20 +105,32 @@ pub fn spawn_service(args: &Args, map: &mut HashMap<String, String>) {
     }
 }
 
+/// Attempts to kill the service with name `args.name`
 #[inline]
 pub fn kill_service(args: &Args) {
     let name = args.name.clone().unwrap();
-    let bash_command = format!("ps -eo args | awk '{{ print $1 }}' | grep -q ^{}$", &name);
-    match Command::new("bash").arg("-c").arg(bash_command).status() {
-        Ok(c) => {
-            if c.success() {
-                println!("Successfully killed process {}", &name.bold());
-            } else {
-                println!("Unable to locate process {}. Was it started?", &name.bold());
-            }
+    if !check_service_active(&name) {
+        println!("Could not find service {}. Was it started?", &name.bold());
+    } else {
+        match sysinfo::System::new_all()
+            .processes()
+            .iter()
+            .find(|(_pid, process)| {
+                process
+                    .cmd()
+                    .first()
+                    .is_some_and(|s| s.to_string_lossy() == *name)
+            })
+            .is_some_and(|(_pid, process)| process.kill())
+        {
+            true => println!("Successfully killed service {}", &name.bold()),
+            false => println!(
+                "Failed to kill service {}. Perhaps try manually killing it with {} ?",
+                &name.bold(),
+                format!("pkill -f {}", name).bold().italic(),
+            ),
         }
-        Err(_) => println!("Unable to locate process {}. Was it started?", &name.bold()),
-    };
+    }
 }
 
 /// Prints the `name, command, status` of each entry.
@@ -131,16 +140,12 @@ pub fn list_service(map: &mut HashMap<String, String>) {
     println!();
     let mut total_active_processes: usize = 0;
     map.iter().for_each(|(name, command)| {
-        let bash_command = format!("ps -eo args | awk '{{ print $1 }}' | grep -q ^{}$", &name);
-        let mut active = "Inactive".red();
-        match Command::new("bash").arg("-c").arg(bash_command).status() {
-            Ok(c) => {
-                if c.success() {
-                    active = "Active".green();
-                    total_active_processes += 1;
-                }
+        let active = match check_service_active(name) {
+            true => {
+                total_active_processes += 1;
+                "Active".green()
             }
-            Err(_) => {}
+            false => "Inactive".red(),
         };
 
         println!(
@@ -156,6 +161,16 @@ pub fn list_service(map: &mut HashMap<String, String>) {
         map.len(),
         total_active_processes
     );
+}
+
+/// Returns true if a process with name `name` is found.
+fn check_service_active(name: &str) -> bool {
+    let bash_command = format!("ps -eo args | awk '{{ print $1 }}' | grep -q ^{}$", &name);
+    Command::new("bash")
+        .arg("-c")
+        .arg(bash_command)
+        .status()
+        .is_ok_and(|c| c.success())
 }
 
 /// Writes the new config of `map` to the service file at path `args.service_file`
