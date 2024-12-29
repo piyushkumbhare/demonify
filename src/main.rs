@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 use std::process::exit;
 mod service;
 use service::*;
@@ -18,35 +20,37 @@ struct Args {
     /// (Note: This program will add the `#!/bin/bash` header)
     service_file: String,
 
-    /// Name of the service, which must be unique across other entries AND host computer's running processes
-    ///
-    /// (Note: all spaces will be replaced with `-`)
+    /// Name of the service.
+    /// 
+    /// All spaces will be replaced with `-`
     #[arg(short, long)]
     name: Option<String>,
 
-    /// Add a service to the service file.
+    /// Add an entry to the service file. 
+    /// 
+    /// Name must be unique across both the service file entries AND running processes on the host machine.
     #[arg(short, long, requires = "command", requires = "name")]
     add: bool,
 
-    /// Associated shell command to be run.
+    /// Shell command used to start a process. Required when adding an entry. Example: `python3 example.py`
     ///
-    /// (Note: all commands will automatically have stdout/stderr info redirected to `<NAME>.log`)
+    /// All commands will automatically have stdout/stderr info redirected to `<NAME>.log`
     #[arg(short, long)]
     command: Option<String>,
 
-    /// Additionally spawns the process after adding its entry to the service file.
+    /// Spawns the specified process.
     ///
-    /// Equivalent to calling `<COMMAND> &>> <NAME>.log`.
+    /// Equivalent to calling `<COMMAND> &>> <NAME>.log` as seen in the service file.
     #[arg(short, long, requires = "name")]
     spawn: bool,
 
-    /// Remove an entry from the service file.
+    /// Remove an entry from the service file. Does not kill the process if running.
     #[arg(short, long)]
     remove: bool,
 
-    /// Additionally kills the process after removing its entry from the service file.
+    /// Kills the specified process.
     ///
-    /// Equivalent to calling `pkill -f <NAME>`.
+    /// Equivalent to calling `pkill -f <NAME>` but ensures an exact name match.
     #[arg(short, long, requires = "name")]
     kill: bool,
 
